@@ -85,7 +85,7 @@ impl opentelemetry_sdk::export::trace::SpanExporter for SpanExporterFile {
             )))));
         };
 
-        let spans = to_jsons(batch);
+        let spans = to_jsons(batch, &self.resource);
 
         for span in &spans {
             if let Ok(s) = serde_json::to_string(&span) {
@@ -104,10 +104,15 @@ impl opentelemetry_sdk::export::trace::SpanExporter for SpanExporterFile {
     }
 }
 
-fn to_jsons(batch: Vec<export::trace::SpanData>) -> Vec<Value> {
+fn to_jsons(batch: Vec<export::trace::SpanData>, resource: &Resource) -> Vec<Value> {
     let mut spans = Vec::<Value>::new();
     for span in &batch {
         let mut map = Map::new();
+        let mut res_map = Map::new();
+        for (k, v) in resource.iter() {
+            res_map.insert(k.to_string(), Value::String(v.to_string()));
+        }
+        map.insert("resource".to_owned(), Value::Object(res_map));
         map.insert(
             "scope".to_owned(),
             Value::String(span.instrumentation_scope.name().to_string()),

@@ -1,13 +1,16 @@
 use once_cell::sync::OnceCell;
+use opentelemetry::KeyValue;
 use opentelemetry::global::ObjectSafeSpan;
 use opentelemetry::trace::{SpanKind, TraceContextExt, TraceError};
 use opentelemetry::{global, trace::Tracer};
 use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig};
+use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::export::trace::SpanExporter;
 use opentelemetry_sdk::metrics::{MetricError, SdkMeterProvider};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::runtime::Tokio;
 use opentelemetry_sdk::trace::{BatchConfig, BatchSpanProcessor, TracerProvider};
+use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 #[cfg(test)]
@@ -25,6 +28,8 @@ const TRACE_SCOPE: &str = "valkey_glide";
 const TIMEOUT_ERROR_METRIC: &str = "glide.timeout_errors";
 const RETRIES_METRIC: &str = "glide.retry_attempts";
 const MOVED_ERROR_METRIC: &str = "glide.moved_errors";
+const DB_SYSTEM_ATTR: &str = "db.system";
+const DB_OPERATION_ATTR: &str = "db.operation";
 
 /// Custom error type for OpenTelemetry errors in Glide
 #[derive(Debug, Error)]
@@ -165,6 +170,10 @@ impl GlideSpanInner {
             tracer
                 .span_builder(name.to_string())
                 .with_kind(SpanKind::Client)
+                .with_attributes(vec![
+                    KeyValue::new(DB_SYSTEM_ATTR, "valkey"),
+                    KeyValue::new(DB_OPERATION_ATTR, name.to_string()),
+                ])
                 .start(&tracer),
         ));
 
@@ -192,6 +201,10 @@ impl GlideSpanInner {
             tracer
                 .span_builder(name.to_string())
                 .with_kind(SpanKind::Client)
+                .with_attributes(vec![
+                    KeyValue::new(DB_SYSTEM_ATTR, "valkey"),
+                    KeyValue::new(DB_OPERATION_ATTR, name.to_string()),
+                ])
                 .start_with_context(&tracer, &parent_context),
         ));
         Ok(GlideSpanInner {
@@ -568,8 +581,10 @@ impl GlideOpenTelemetry {
         };
 
         global::set_text_map_propagator(TraceContextPropagator::new());
+        let resource = Resource::new(vec![KeyValue::new(SERVICE_NAME, "valkey-glide")]);
         let provider = TracerProvider::builder()
             .with_span_processor(trace_exporter)
+            .with_config(opentelemetry_sdk::trace::Config::default().with_resource(resource))
             .build();
         global::set_tracer_provider(provider);
 
@@ -612,8 +627,10 @@ impl GlideOpenTelemetry {
             }
         };
 
+        let resource = Resource::new(vec![KeyValue::new(SERVICE_NAME, "valkey-glide")]);
         let meter_provider = SdkMeterProvider::builder()
             .with_reader(metrics_exporter)
+            .with_resource(resource)
             .build();
         global::set_meter_provider(meter_provider);
 
@@ -835,6 +852,14 @@ mod tests {
 
             let span_json: serde_json::Value = serde_json::from_str(lines[base]).unwrap();
             assert_eq!(span_json["name"], "Network_Span");
+            assert_eq!(span_json["resource"]["service.name"], "valkey-glide");
+            let attrs = span_json["span_attributes"].as_array().unwrap();
+            assert!(
+                attrs.iter().any(|a| a.get("db.system")
+                    == Some(&serde_json::Value::String("valkey".to_string())))
+            );
+            assert!(attrs.iter().any(|a| a.get("db.operation")
+                == Some(&serde_json::Value::String("Network_Span".to_string()))));
             let network_span_id = span_json["span_id"].to_string();
             let network_span_start_time = string_property_to_u64(&span_json, "start_time");
             let network_span_end_time = string_property_to_u64(&span_json, "end_time");
@@ -897,6 +922,7 @@ mod tests {
                 .collect();
 
             let metric_json: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+            assert_eq!(metric_json["resource"]["service.name"], "valkey-glide");
             assert_eq!(
                 metric_json["scope_metrics"][0]["metrics"][0]["name"],
                 "glide.timeout_errors"
@@ -935,6 +961,7 @@ mod tests {
                 .collect();
 
             let metric_json: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+            assert_eq!(metric_json["resource"]["service.name"], "valkey-glide");
             assert_eq!(
                 metric_json["scope_metrics"][0]["metrics"][0]["name"],
                 "glide.retry_attempts"
@@ -973,6 +1000,7 @@ mod tests {
                 .collect();
 
             let metric_json: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+            assert_eq!(metric_json["resource"]["service.name"], "valkey-glide");
             assert_eq!(
                 metric_json["scope_metrics"][0]["metrics"][0]["name"],
                 "glide.moved_errors"
