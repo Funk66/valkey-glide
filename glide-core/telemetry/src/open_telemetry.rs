@@ -612,7 +612,7 @@ impl GlideOpenTelemetry {
                     log_warn(
                         "opentelemetry",
                         format!(
-                            "Inconsistent configuration: The endpoint URL '{url}' suggests gRPC, but the protocol is set to '{protocol}' via environment variables. The environment variable setting will be used."
+                            "Inconsistent configuration: The endpoint URL '{url}' suggests gRPC, but the protocol is set to '{protocol:?}' via environment variables. The environment variable setting will be used."
                         ),
                     );
                 }
@@ -685,12 +685,8 @@ impl GlideOpenTelemetry {
                     log_warn(
                         "opentelemetry",
                         format!(
-                            "Inconsistent configuration: The endpoint URL '{url}' suggests gRPC, but the protocol is set to '{protocol}' via environment variables. The environment variable setting will be used."
+                            "Inconsistent configuration: The endpoint URL '{url}' suggests gRPC, but the protocol is set to '{protocol:?}' via environment variables. The environment variable setting will be used."
                         ),
-                    );
-                    warn!(
-                        "Inconsistent configuration: The endpoint URL '{}' suggests gRPC, but the protocol is set to '{:?}' via environment variables. The environment variable setting will be used.",
-                        url, protocol
                     );
                 }
                 let exporter = match protocol {

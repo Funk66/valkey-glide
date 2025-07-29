@@ -9,6 +9,7 @@ on:
             - main
             - release-*
             - v*
+            - test
         paths:
             - glide-core/src/**
             - glide-core/redis-rs/redis/src/**
